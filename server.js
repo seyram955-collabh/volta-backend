@@ -1,4 +1,3 @@
-
 // ═══════════════════════════════════════════════════
 //  Volta Lake Emergency Response System — Server
 //  Single file, no external auth dependencies
@@ -127,6 +126,50 @@ app.post('/api/auth/login', (req, res) => {
   res.json({ success: true, token, user: { id: user.id, username: user.username, role: user.role }, expiresIn: '8h' });
 });
  
+ 
+// Register new responder account
+app.post('/api/auth/register', (req, res) => {
+  const { username, password, fullName } = req.body;
+ 
+  if (!username || !password) {
+    return res.status(400).json({ success: false, error: 'Username and password are required.' });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ success: false, error: 'Password must be at least 6 characters.' });
+  }
+  if (username.length < 3) {
+    return res.status(400).json({ success: false, error: 'Username must be at least 3 characters.' });
+  }
+  if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+    return res.status(400).json({ success: false, error: 'Username can only contain letters, numbers and underscores.' });
+  }
+ 
+  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username.toLowerCase());
+  if (existing) {
+    return res.status(409).json({ success: false, error: 'Username already taken. Please choose another.' });
+  }
+ 
+  const hash = hashPassword(password);
+  const result = db.prepare(
+    'INSERT INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)'
+  ).run(username.toLowerCase(), hash, 'responder', fullName || username);
+ 
+  const token = jwt.sign(
+    { id: result.lastInsertRowid, username: username.toLowerCase(), role: 'responder' },
+    JWT_SECRET,
+    { expiresIn: '8h' }
+  );
+ 
+  console.log('New account: ' + username + ' (responder)');
+ 
+  res.status(201).json({
+    success: true,
+    token,
+    user: { id: result.lastInsertRowid, username: username.toLowerCase(), role: 'responder' },
+    expiresIn: '8h'
+  });
+});
+ 
 // Get current user
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ success: true, user: req.user });
@@ -211,3 +254,4 @@ app.listen(PORT, () => {
   console.log(`   Health: /health`);
   console.log('');
 });
+ 
