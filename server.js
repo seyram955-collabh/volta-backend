@@ -1,35 +1,37 @@
 // ═══════════════════════════════════════════════════
 //  Volta Lake Emergency Response System — Server
 // ═══════════════════════════════════════════════════
-
+ 
 require('dotenv').config();
 const express  = require('express');
 const cors     = require('cors');
 const helmet   = require('helmet');
 const morgan   = require('morgan');
 const rateLimit = require('express-rate-limit');
-
+ 
 const alertRoutes = require('./routes/alert');
+const authRoutes  = require('./routes/auth');
 const { initDB }  = require('./db/database');
-
+const { initUsersTable } = require('./db/users');
+ 
 const app  = express();
 const PORT = process.env.PORT || 3000;
-
+ 
 // ─── Security middleware ──────────────────────────
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
-
-// CORS — allow your frontend origin
+ 
+// CORS — fully open for now
 app.use(cors({
-  origin: [
-    process.env.FRONTEND_URL || 'http://localhost:5500',
-    'http://127.0.0.1:5500',
-    'http://localhost:3000',
-  ],
-  methods: ['GET', 'POST'],
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-
+ 
+// Handle preflight
+app.options('*', cors());
+ 
 // ─── Rate limiting ────────────────────────────────
 // Max 10 alerts per IP per 15 minutes (prevents spam)
 const alertLimiter = rateLimit({
@@ -38,10 +40,11 @@ const alertLimiter = rateLimit({
   message: { success: false, error: 'Too many alerts sent. Please wait before trying again.' },
 });
 app.use('/api/alert', alertLimiter);
-
+ 
 // ─── Routes ───────────────────────────────────────
+app.use('/api/auth',  authRoutes);
 app.use('/api/alert', alertRoutes);
-
+ 
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
@@ -51,24 +54,25 @@ app.get('/health', (req, res) => {
     environment: process.env.NODE_ENV,
   });
 });
-
+ 
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ success: false, error: 'Endpoint not found' });
 });
-
+ 
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ success: false, error: 'Internal server error' });
 });
-
+ 
 // ─── Start ────────────────────────────────────────
 async function start() {
   try {
     await initDB();
+    initUsersTable();
     console.log('✅ Database initialized');
-
+ 
     app.listen(PORT, () => {
       console.log('');
       console.log('🚤 ═══════════════════════════════════════════');
@@ -87,5 +91,5 @@ async function start() {
     process.exit(1);
   }
 }
-
+ 
 start();
